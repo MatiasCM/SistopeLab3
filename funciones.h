@@ -40,8 +40,8 @@ void *planificador_cola_bloqueados();
 
 void *planificador(void*procesador);
 
-Proceso *leer_archivo_de_procesos(char *nombre_archivo);
+int leer_archivo_de_procesos(char *nombre_archivo, Proceso *cola_procesos);
 
-void inicializacion_sistema();
+void inicializacion_sistema(Proceso *cola_procesos, int numero_procesos);
 
 void sistema(int procesadores, float quantum, float probabilidad);

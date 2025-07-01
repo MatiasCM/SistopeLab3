@@ -24,9 +24,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    Proceso *cola_procesos = leer_archivo_de_procesos(input);
+    Proceso *cola_procesos = NULL;
+    int numero_de_procesos = leer_archivo_de_procesos(input, cola_procesos);
 
-    inicializacion_sistema();
+    inicializacion_sistema(cola_procesos, numero_de_procesos);
 
     sistema(numproc, quantum, prob);
 

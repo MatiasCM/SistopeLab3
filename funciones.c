@@ -8,15 +8,24 @@ void *planificador_cola_bloqueados(){
 
 void *planificador(void*proce){
     Procesador *procesador = (Procesador*) proce;
-    printf("hola soy %d\n", procesador->num_procesador);
+    printf("hola soy %d\nel sistema tiene %d procesos en la runqueue\n", procesador->num_procesador, info_sistema->procesos_en_cola_listos);
+
+    while(info_sistema->procesos_en_cola_listos > 0 && info_sistema->procesos_en_cola_bloqueados > 0){
+        pthread_mutex_lock(&info_sistema->mutex_cola_listos);
+        if(info_sistema->procesos_en_cola_listos == 0 && info_sistema->procesos_en_cola_bloqueados > 0){
+            // se debe quedar esperando a que agreguen procesos a la cola de listos
+            pthread_cond_wait(&info_sistema->condicion_cola_listos, &info_sistema->mutex_cola_listos);
+        }
+        pthread_mutex_unlock(&info_sistema->mutex_cola_listos);
+    }
     return NULL;
 }
 
-Proceso *leer_archivo_de_procesos(char *nombre_archivo){
+int leer_archivo_de_procesos(char *nombre_archivo, Proceso *cola_procesos){
     FILE* archivo = fopen(nombre_archivo, "r");
     if (!archivo) {
         perror("No se pudo abrir el archivo");
-        return NULL;
+        return 0;
     }
     
     /*
@@ -45,7 +54,8 @@ Proceso *leer_archivo_de_procesos(char *nombre_archivo){
 
     int numero_de_procesos;
     fscanf(archivo, "%d", &numero_de_procesos);
-    Proceso *cola_procesos = (Proceso*)malloc(sizeof(Proceso)*numero_de_procesos);
+
+    cola_procesos = (Proceso*)malloc(sizeof(Proceso)*numero_de_procesos);
 
     int pid, tiempo_llegada, tiempo_servicio;
     int i = 0;
@@ -57,19 +67,17 @@ Proceso *leer_archivo_de_procesos(char *nombre_archivo){
         cola_procesos[i].esta_bloqueado = 0;
         i++;
     }
-
-    for(int j = 0; j < numero_de_procesos; j++){
-        printf("hola soy %d: %d, %d\n", cola_procesos[j].pid, cola_procesos[j].tiempo_llegada, cola_procesos[j].tiempo_servicio);
-    }
-
+    
     fclose(archivo);
-    return cola_procesos;
+    return numero_de_procesos;
 }
 
-void inicializacion_sistema(Proceso *cola_procesos){
+void inicializacion_sistema(Proceso *cola_procesos, int numero_procesos){
     info_sistema = (Sistema*)malloc(sizeof(Sistema));
     info_sistema->cola_listos = cola_procesos;
     info_sistema->cola_bloqueados = NULL;
+    info_sistema->procesos_en_cola_listos = numero_procesos;
+    info_sistema->procesos_en_cola_bloqueados = 0;
     pthread_mutex_init(&info_sistema->mutex_cola_listos, NULL);
     pthread_cond_init(&info_sistema->condicion_cola_listos, NULL);
     pthread_mutex_init(&info_sistema->mutex_cola_bloqueados, NULL);
