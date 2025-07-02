@@ -6,26 +6,101 @@ void *planificador_cola_bloqueados(){
     return NULL;
 }
 
-void *planificador(void*proce){
-    Procesador *procesador = (Procesador*) proce;
-    printf("hola soy %d\nel sistema tiene %d procesos en la runqueue\n", procesador->num_procesador, info_sistema->procesos_en_cola_listos);
-
-    while(info_sistema->procesos_en_cola_listos > 0 && info_sistema->procesos_en_cola_bloqueados > 0){
-        pthread_mutex_lock(&info_sistema->mutex_cola_listos);
-        if(info_sistema->procesos_en_cola_listos == 0 && info_sistema->procesos_en_cola_bloqueados > 0){
-            // se debe quedar esperando a que agreguen procesos a la cola de listos
-            pthread_cond_wait(&info_sistema->condicion_cola_listos, &info_sistema->mutex_cola_listos);
-        }
-        pthread_mutex_unlock(&info_sistema->mutex_cola_listos);
+Proceso *desencolar(Proceso *cola, int num_procesos){
+    Proceso *cola_modificada = (Proceso*)malloc(sizeof(Proceso)*(num_procesos-1));
+    for(int proc = 0; proc < (num_procesos-1); proc++){
+        cola_modificada[proc] = cola[proc];
     }
+    cola = NULL;
+    return cola_modificada;
+}
+
+Proceso *encolar(Proceso *cola, int num_procesos, Proceso proceso_entrante){
+    Proceso *cola_modificada = (Proceso*)malloc(sizeof(Proceso)*(num_procesos+1));
+    cola_modificada[0] = proceso_entrante;
+
+    for(int proc = 1; proc < (num_procesos+1); proc++){
+        cola_modificada[proc] = cola[proc-1];
+    }
+    cola = NULL;
+    return cola_modificada;
+}
+
+void *planificador(void*proce){
+
+    srand(time(NULL));
+
+    Procesador *procesador = (Procesador*) proce;
+
+    while(info_sistema->procesos_en_cola_listos > 0){
+
+        // seccion critica
+        //
+        pthread_mutex_lock(&info_sistema->mutex_cola_listos);
+
+        int num_procesos_cola_listos = info_sistema->procesos_en_cola_listos;
+
+        Proceso proceso;
+        
+        if(num_procesos_cola_listos > 0){
+            proceso = info_sistema->cola_listos[num_procesos_cola_listos-1];
+
+            info_sistema->cola_listos = desencolar(info_sistema->cola_listos, num_procesos_cola_listos);
+            info_sistema->procesos_en_cola_listos -= 1;
+        }
+        
+        pthread_mutex_unlock(&info_sistema->mutex_cola_listos);
+        //
+        // seccion critica
+        
+        if(num_procesos_cola_listos > 0){
+            // genera un numero entre 1 y 100
+            int hace_IO = rand() % 100 + 1;
+
+            // si el numero creado es menor o igual que la probabilidad por 100 entonces hace IO
+            // ej: si la probabilidad_RIO es 0.31 entonces desde 1 a 31 se hace RIO y desde 32 hasta 100 no
+            //     eso daria una probabilidad de 31% 
+            if(hace_IO <= procesador->probabilidad_RIO*100){
+                int duracion_RP = rand() % ((int)procesador->quantum);
+                usleep(duracion_RP);
+                proceso.tiempo_restante -= duracion_RP;
+
+                // seccion critica
+                //
+                pthread_mutex_lock(&info_sistema->mutex_cola_bloqueados);
+
+                int num_procesos_cola_bloqueados = info_sistema->procesos_en_cola_bloqueados;
+
+                info_sistema->cola_bloqueados = encolar(info_sistema->cola_bloqueados, num_procesos_cola_bloqueados, proceso);
+                info_sistema->procesos_en_cola_bloqueados += 1;
+
+                pthread_mutex_unlock(&info_sistema->mutex_cola_bloqueados);
+                //
+                // seccion critica
+            }
+            else{
+                if(proceso.tiempo_restante <= procesador->quantum){
+                    usleep(proceso.tiempo_restante);
+                    proceso.tiempo_restante = 0;
+                }
+                else{
+                    usleep(procesador->quantum);
+                    proceso.tiempo_restante -= procesador->quantum;
+                }
+            }
+            printf("quedan %d\n", info_sistema->procesos_en_cola_listos);
+        }
+
+    }
+    printf("termine mi ejecucion %d\n", procesador->num_procesador);
     return NULL;
 }
 
-int leer_archivo_de_procesos(char *nombre_archivo, Proceso *cola_procesos){
+Proceso *leer_archivo_de_procesos(char *nombre_archivo, int*numero_de_procesos){
     FILE* archivo = fopen(nombre_archivo, "r");
     if (!archivo) {
         perror("No se pudo abrir el archivo");
-        return 0;
+        return NULL;
     }
     
     /*
@@ -52,10 +127,9 @@ int leer_archivo_de_procesos(char *nombre_archivo, Proceso *cola_procesos){
         ----------------
     */
 
-    int numero_de_procesos;
-    fscanf(archivo, "%d", &numero_de_procesos);
+    fscanf(archivo, "%d", numero_de_procesos);
 
-    cola_procesos = (Proceso*)malloc(sizeof(Proceso)*numero_de_procesos);
+    Proceso *cola_procesos = (Proceso*)malloc(sizeof(Proceso)*(*numero_de_procesos));
 
     int pid, tiempo_llegada, tiempo_servicio;
     int i = 0;
@@ -69,7 +143,7 @@ int leer_archivo_de_procesos(char *nombre_archivo, Proceso *cola_procesos){
     }
     
     fclose(archivo);
-    return numero_de_procesos;
+    return cola_procesos;
 }
 
 void inicializacion_sistema(Proceso *cola_procesos, int numero_procesos){
@@ -93,6 +167,8 @@ void sistema(int procesadores, float quantum, float probabilidad){
         procesador->tiempo_bloqueado_promedio = 0;
         procesador->tiempo_espera_promedio = 0;
         procesador->utilizacion = 0;
+        procesador->quantum = quantum;
+        procesador->probabilidad_RIO = probabilidad;
 
         pthread_create(&tids[proc], NULL, planificador, (void*)procesador);
     }
