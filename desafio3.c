@@ -25,9 +25,6 @@ int main(int argc, char *argv[]) {
     }
     int numero_de_procesos = 0;
     Proceso *cola_procesos = leer_archivo_de_procesos(input, &numero_de_procesos);
-    for(int i = 0; i < numero_de_procesos; i++){
-        printf("%d\n", cola_procesos[i].pid);
-    }
 
     inicializacion_sistema(cola_procesos, numero_de_procesos);
 
